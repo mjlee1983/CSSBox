@@ -21,6 +21,7 @@
 package org.fit.cssbox.layout;
 
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
@@ -29,12 +30,14 @@ import java.awt.font.LineMetrics;
 import java.awt.font.TextAttribute;
 import java.text.AttributedString;
 
+import cz.vutbr.web.css.NodeData;
 import org.w3c.dom.Text;
 
 import cz.vutbr.web.css.CSSProperty;
 import cz.vutbr.web.css.CSSProperty.TextTransform;
 import cz.vutbr.web.css.CSSProperty.WordSpacing;
 import cz.vutbr.web.css.TermLength;
+import sun.font.FontDesignMetrics;
 
 /**
  * A box that corresponds to a text node.
@@ -105,7 +108,21 @@ public class TextBox extends Box implements Inline
     
     
     //===================================================================
-    
+    public TextBox(Text n, Graphics2D g, VisualContext ctx, NodeData style) {
+        super(n, g, ctx);
+        textNode = n;
+        transform = TextTransform.NONE;
+        wordSpacing = null;
+        setWhiteSpace(ElementBox.WHITESPACE_NORMAL); //resets the text content and indices
+        ctx.updateForGraphics(style, g);
+
+        ignoreinitialws = false;
+        collapsews = true;
+        containsLineBreak = false;
+        lineBreakStop = false;
+        collapsedCompletely = false;
+    }
+
     /**
      * Creates a new TextBox formed by a DOM text node.
      * @param n the corresponding DOM text node
@@ -114,19 +131,7 @@ public class TextBox extends Box implements Inline
      */
     public TextBox(Text n, Graphics2D g, VisualContext ctx)
     {
-        super(n, g, ctx);
-        textNode = n;
-        transform = TextTransform.NONE;
-        wordSpacing = null;
-        setWhiteSpace(ElementBox.WHITESPACE_NORMAL); //resets the text content and indices
-        
-        ctx.updateForGraphics(null, g);
-
-        ignoreinitialws = false;
-        collapsews = true;
-        containsLineBreak = false;
-        lineBreakStop = false;
-        collapsedCompletely = false;
+        this(n, g, ctx, null);
     }
 
     /**
@@ -451,13 +456,13 @@ public class TextBox extends Box implements Inline
 	@Override
     public int getContentWidth() 
     {
-        return bounds.width;
+        return stringWidth(g.getFontMetrics(), this.text);
     }
     
 	@Override
     public int getContentHeight() 
     {
-        return bounds.height;
+        return getTotalLineHeight();
     }
 
 	@Override
@@ -465,32 +470,38 @@ public class TextBox extends Box implements Inline
     {
         return availwidth;
     }
-    
+
+    @Override
     public int getLineHeight()
     {
         return parent.getLineHeight();
     }
-    
+
+    @Override
     public int getMaxLineHeight()
     {
-        return parent.getLineHeight();
-    }
-    
-    public int getTotalLineHeight()
-    {
-        return ctx.getFontHeight();
+        return this.getTotalLineHeight();
     }
 
+    @Override
+    public int getTotalLineHeight()
+    {
+        return stringHeight(g.getFontMetrics(), this.text);
+    }
+
+    @Override
     public int getBaselineOffset()
     {
         return ctx.getBaselineOffset();
     }
-    
+
+    @Override
     public int getBelowBaseline()
     {
-        return ctx.getFontHeight() - ctx.getBaselineOffset();
+        return this.getTotalLineHeight() - ctx.getBaselineOffset();
     }
-    
+
+    @Override
     public int getHalfLead()
     {
         return 0;
@@ -506,15 +517,12 @@ public class TextBox extends Box implements Inline
     }
     
     @Override
-    public int totalHeight() 
-    {
-        return bounds.width;
-    }
+    public int totalHeight() { return bounds.height; }
     
 	@Override
     public int totalWidth() 
     {
-        return bounds.height;
+        return bounds.width;
     }
     
 	@Override
@@ -668,7 +676,7 @@ public class TextBox extends Box implements Inline
             do
             {
                 w = stringWidth(fm, text.substring(textStart, end));
-                h = fm.getHeight();
+                h = stringHeight(fm, text.substring(textStart, end));
                 if (w > wlimit) //exceeded - try to split if allowed
                 {
                     if (empty) //empty or just spaces - don't place at all
@@ -782,7 +790,7 @@ public class TextBox extends Box implements Inline
 	@Override
     public int getMaximalWidth()
     {
-		return maxwidth;
+		return computeMaximalWidth();
     }
 	
     private int computeMaximalWidth()
@@ -801,7 +809,7 @@ public class TextBox extends Box implements Inline
             return longestLineLength;
         }
     }
-    
+
     private int getLongestWord()
     {
         int ret = 0;
@@ -1014,24 +1022,66 @@ public class TextBox extends Box implements Inline
     /**
      * Computes the final width of a string while considering word-spacing
      * @param fm the font metrics used for calculation
-     * @param text the string to be measured
+     * @param givenText the string to be measured
      * @return the resulting width in pixels
      */
-    private int stringWidth(FontMetrics fm, String text)
+    private int stringWidth(FontMetrics fm, String givenText)
     {
-        int w = fm.stringWidth(text);
+        int w = 0;
+        char[] text = givenText.toCharArray();
+        for (int idx = 0; idx < text.length; idx++)
+        {
+            boolean matchFound = false;
+            int idxStart = idx;
+            int codePoint = Character.codePointAt(text, idx);
+            int idxEnd = idxStart + Character.charCount(codePoint);
+            idx = idxEnd - 1;
+            for (int i = 0; i < ctx.getFallbackFonts().size(); i++) {
+                Font font = ctx.getFallbackFonts().get(i);
+                if (font.canDisplay(codePoint)) {
+                    matchFound = true;
+                    FontMetrics fontMetrics = FontDesignMetrics.getMetrics(font, g.getFontRenderContext());
+                    w += fontMetrics.stringWidth(new String(Character.toChars(codePoint)));
+                    break;
+                }
+            }
+            if (!matchFound) {
+                w += fm.stringWidth(new String(Character.toChars(codePoint)));
+            }
+        }
         if (wordSpacing != null)
         {
             //count spaces and add
             float add = 0.0f;
-            for (int i = 0; i < text.length(); i++)
+            for (int i = 0; i < givenText.length(); i++)
             {
-                if (text.charAt(i) == ' ')
+                if (givenText.charAt(i) == ' ')
                     add += wordSpacing;
             }
             w = Math.round(w + add);
         }
         return w;
+    }
+
+    private int stringHeight(FontMetrics fm, String givenText) {
+        int height = fm.getHeight();
+        char[] text = givenText.toCharArray();
+        for (int idx = 0; idx < text.length; idx++)
+        {
+            int idxStart = idx;
+            int codePoint = Character.codePointAt(text, idx);
+            int idxEnd = idxStart + Character.charCount(codePoint);
+            idx = idxEnd - 1;
+            for (int i = 0; i < ctx.getFallbackFonts().size(); i++) {
+                Font font = ctx.getFallbackFonts().get(i);
+                if (font.canDisplay(codePoint)) {
+                    FontMetrics fontMetrics = FontDesignMetrics.getMetrics(font, g.getFontRenderContext());
+                    height = Math.max(height, fontMetrics.getHeight());
+                    break;
+                }
+            }
+        }
+        return height;
     }
     
     /** 
@@ -1057,42 +1107,65 @@ public class TextBox extends Box implements Inline
                 drawAttributedString(g, x, y, t);
             else
                 drawByWords(g, x, y, t);
-            
             g.setClip(oldclip);
         }
     }
 
-    private void drawByWords(Graphics2D g, int x, int y, String text)
+    private int drawByWords(Graphics2D g, int x, int y, String text)
     {
+        int offset = 0;
         String[] words = text.split(" ");
         if (words.length > 0)
         {
-            final FontMetrics fm = g.getFontMetrics();
-            final int[][] offsets = getWordOffsets(fm, words);
             for (int i = 0; i < words.length; i++)
-                drawAttributedString(g, x + offsets[i][0], y, words[i]);
+                offset += drawAttributedString(g, x + offset, y, words[i]);
         }
         else
-            drawAttributedString(g, x, y, text);
+            offset += drawAttributedString(g, x, y, text);
+        return offset;
     }
     
     /**
      * Draws a single string with eventual attributes based on the current visual context.
      */
-    private void drawAttributedString(Graphics2D g, int x, int y, String text)
+    private int drawAttributedString(Graphics2D g, int x, int y, String givenText)
     {
-        if (!ctx.getTextDecoration().isEmpty()) 
+        char[] text = givenText.toCharArray();
+        int offset = 0;
+        int ascent = getBaselineOffset();
+        AttributedString as = new AttributedString(givenText);
+        if (!ctx.getTextDecoration().isEmpty())
         {
-            AttributedString as = new AttributedString(text);
-            as.addAttribute(TextAttribute.FONT, ctx.getFont());
             if (ctx.getTextDecoration().contains(CSSProperty.TextDecoration.UNDERLINE))
                 as.addAttribute(TextAttribute.UNDERLINE, TextAttribute.UNDERLINE_ON);
             if (ctx.getTextDecoration().contains(CSSProperty.TextDecoration.LINE_THROUGH))
                 as.addAttribute(TextAttribute.STRIKETHROUGH, TextAttribute.STRIKETHROUGH_ON);
-            g.drawString(as.getIterator(), x, y + getBaselineOffset());
-        } 
-        else
-            g.drawString(text, x, y + getBaselineOffset());
+        }
+        for (int idx = 0; idx < text.length; idx++)
+        {
+            boolean matchFound = false;
+            int idxStart = idx;
+            int codePoint = Character.codePointAt(text, idx);
+            int idxEnd = idxStart + Character.charCount(codePoint);
+            idx = idxEnd - 1;
+            for (int i = 0; i < ctx.getFallbackFonts().size(); i++) {
+                Font font = ctx.getFallbackFonts().get(i);
+                if (font.canDisplay(codePoint)) {
+                    as.addAttribute(TextAttribute.FONT, font, idxStart, idxEnd);
+                    matchFound = true;
+                    FontMetrics fontMetrics = FontDesignMetrics.getMetrics(font, g.getFontRenderContext());
+                    int[][] letterOffset = getWordOffsets(fontMetrics, new String[] {new String(Character.toChars(codePoint))});
+                    offset += letterOffset[0][0];
+                    ascent = Math.max(ascent, fontMetrics.getAscent());
+                    break;
+                }
+            }
+            if (!matchFound) {
+                as.addAttribute(TextAttribute.FONT, ctx.getFont(), idxStart, idxEnd);
+            }
+        }
+        g.drawString(as.getIterator(), x, y + ascent);
+        return offset;
     }
     
 	@Override

@@ -12,7 +12,8 @@
 
 	<groupId>net.sf.cssbox</groupId>
 	<artifactId>cssbox</artifactId>
-	<version>4.16-SNAPSHOT</version>
+	<packaging>jar</packaging>
+	<version>4.15-CSS-INTERNAL</version>
 	<name>CSSBox</name>
 	<description>
 	CSSBox is an (X)HTML/CSS rendering engine written in pure Java. Its primary purpose is to provide a
@@ -44,16 +45,19 @@
     		</contributor>
   	</contributors>
   
-	<scm>
-		<url>https://github.com/radkovo/CSSBox</url>
-		<connection>scm:git:git@github.com:radkovo/CSSBox.git</connection>
-		<developerConnection>scm:git:git@github.com:radkovo/CSSBox.git</developerConnection>
-	  <tag>HEAD</tag>
-	</scm>
-	
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+	<pluginRepositories>
+		<pluginRepository>
+			<id>artifactory</id>
+			<url>https://artifactory.cloudkitchens.internal/artifactory/maven-release</url>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</pluginRepository>
+	</pluginRepositories>
 
 	<build>
 		<resources>
@@ -103,29 +107,6 @@
 				</configuration>
 			</plugin>
 
-			<plugin>
-				<groupId>org.sonatype.plugins</groupId>
-				<artifactId>nexus-staging-maven-plugin</artifactId>
-				<version>1.6.8</version>
-				<extensions>true</extensions>
-				<configuration>
-					<serverId>ossrh</serverId>
-					<nexusUrl>https://oss.sonatype.org/</nexusUrl>
-					<autoReleaseAfterClose>true</autoReleaseAfterClose>
-				</configuration>
-			</plugin>
-				
-			<plugin>
-				<artifactId>maven-assembly-plugin</artifactId>
-				<version>3.1.0</version>
-				<configuration>
-					<descriptors>
-						<descriptor>/src/main/assembly/dist.xml</descriptor>
-					</descriptors>
-					<appendAssemblyId>false</appendAssemblyId>
-				</configuration>
-			</plugin>
-	
 		</plugins>
 		
 	</build>
@@ -196,16 +177,32 @@
 						</executions>
 					</plugin>
 					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-gpg-plugin</artifactId>
-						<version>1.6</version>
+						<groupId>org.jfrog.buildinfo</groupId>
+						<artifactId>artifactory-maven-plugin</artifactId>
+						<version>2.7.0</version>
+						<inherited>false</inherited>
 						<executions>
 							<execution>
-								<id>sign-artifacts</id>
-								<phase>verify</phase>
+								<id>default-deploy</id>
 								<goals>
-									<goal>sign</goal>
+									<goal>publish</goal>
 								</goals>
+								<configuration>
+									<deployProperties>
+										<gradle>awesome</gradle>
+									</deployProperties>
+									<artifactory>
+										<includeEnvVars>true</includeEnvVars>
+									</artifactory>
+									<publisher>
+										<contextUrl>https://artifactory.cloudkitchens.internal:443/artifactory</contextUrl>
+										<username>${artifactory_username}</username>
+										<password>${artifactory_password}</password>
+										<excludePatterns>*-tests.jar</excludePatterns>
+										<repoKey>maven-release-local</repoKey>
+										<snapshotRepoKey>maven-release-local</snapshotRepoKey>
+									</publisher>
+								</configuration>
 							</execution>
 						</executions>
 					</plugin>
@@ -215,10 +212,11 @@
 	</profiles>
 
 	<distributionManagement>
-		<snapshotRepository>
-			<id>ossrh</id>
-			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
-		</snapshotRepository>
+		<repository>
+			<id>artifactory</id>
+			<name>artifactory</name>
+			<url>https://artifactory.cloudkitchens.internal:443/artifactory/maven-release-local</url>
+		</repository>
 	</distributionManagement>
-	
+
 </project>

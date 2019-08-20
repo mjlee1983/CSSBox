@@ -512,8 +512,10 @@ public class BoxFactory
      */
     private TextBox createTextBox(Text n, BoxTreeCreationStatus stat)
     {
+        NodeData style = decoder.getElementStyleInherited((Element) n.getParentNode());
+
         //TODO: in some whitespace processing modes, multiple boxes may be created
-        TextBox text = new TextBox(n, (Graphics2D) stat.parent.getGraphics().create(), stat.parent.getVisualContext().create());
+        TextBox text = new TextBox(n, (Graphics2D) stat.parent.getGraphics().create(), stat.parent.getVisualContext().create(), style);
         text.setOrder(next_order++);
         text.setContainingBlockBox(stat.contbox);
         text.setClipBlock(stat.clipbox);

@@ -166,8 +166,10 @@ public class SVGRenderer implements BoxRenderer
     {
         Rectangle b = text.getAbsoluteBounds();
         String style = textStyle(text.getVisualContext());
-        if (text.getWordSpacing() == null && text.getExtraWidth() == 0)
-            writeText(b.x, b.y + text.getBaselineOffset(), b.width, b.height, style, text.getText());
+        if (text.getWordSpacing() == null && text.getExtraWidth() == 0) {
+            final int[][] offsets = text.getWordOffsets(new String[] {text.getText()});
+            writeText(b.x + offsets[0][0], b.y + text.getBaselineOffset(), offsets[0][1], b.height, style, text.getText());
+        }
         else
             writeTextByWords(b.x, b.y + text.getBaselineOffset(), b.width, b.height, style, text);
         out.println();
@@ -303,8 +305,10 @@ public class SVGRenderer implements BoxRenderer
                 writeText(x + offsets[i][0], y, offsets[i][1], height, style, words[i]);
             out.print("</g>");
         }
-        else
-            writeText(x, y, width, height, style, text.getText());
+        else {
+            final int[][] offsets = text.getWordOffsets(new String[] {text.getText()});
+            writeText(x + offsets[0][0], y, offsets[0][1], height, style, text.getText());
+        }
     }
     
     private void writeBullet(ListItemBox lb)

@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +62,7 @@ public class VisualContext
     private BoxFactory factory; //the factory used for obtaining current configuration
     private Viewport viewport; //the viewport used for obtaining the vw sizes
     private Font font; //current font
+    private List<Font> fallbackFonts; //list of fallbackFonts, in the order of precedence
     private FontMetrics fm; //current font metrics
     private double fontSize;
     private CSSProperty.FontWeight fontWeight;
@@ -86,12 +88,14 @@ public class VisualContext
         this.parent = parent;
         this.factory = factory;
         rootContext = (parent == null) ? this : parent.rootContext;
+        fallbackFonts = new ArrayList<>();
         em = CSSUnits.medium_font;
         rem = em;
         ex = 0.6 * em;
         ch = 0.8 * ch; //just an initial guess, updated in updateForGraphics()
         dpi = org.fit.cssbox.css.CSSUnits.dpi;
         font = new Font(Font.SERIF, Font.PLAIN, (int) CSSUnits.medium_font);
+        fallbackFonts.add(font); // default font
         fontSize = CSSUnits.points(CSSUnits.medium_font);
         fontWeight = CSSProperty.FontWeight.NORMAL;
         fontStyle = CSSProperty.FontStyle.NORMAL;
@@ -106,12 +110,14 @@ public class VisualContext
         VisualContext ret = new VisualContext(this, this.factory);
         ret.viewport = viewport;
         ret.rootContext = rootContext;
+        ret.fm = fm;
         ret.em = em;
         ret.rem = rem;
         ret.ex = ex;
         ret.ch = ch;
         ret.dpi = dpi;
         ret.font = font;
+        ret.fallbackFonts = new ArrayList<Font>(fallbackFonts);
         ret.fontSize = fontSize;
         ret.fontWeight = fontWeight;
         ret.fontStyle = fontStyle;
@@ -158,6 +164,10 @@ public class VisualContext
     public Font getFont()
     {
         return font;
+    }
+
+    public List<Font> getFallbackFonts() {
+        return fallbackFonts;
     }
 
     /**
@@ -275,32 +285,42 @@ public class VisualContext
      */
     public void update(NodeData style)
     {
-        //setup the font
+        fallbackFonts.clear(); // Reset the font cache
         CSSProperty.FontWeight weight = style.getProperty("font-weight");
         if (weight != null) fontWeight = weight;
         CSSProperty.FontStyle fstyle =  style.getProperty("font-style");
         if (fstyle != null) fontStyle = fstyle;
         
         String family = null;
+        List<String> fontFamilies = new ArrayList<>();
         CSSProperty.FontFamily ff = style.getProperty("font-family");
         if (ff == null)
         {
             family = font.getFamily(); //use current
+            fontFamilies.add(font.getFamily());
         }
         else if (ff == FontFamily.list_values)
         {
             TermList fmlspec = style.getValue(TermList.class, "font-family");
-            if (fmlspec == null)
+            if (fmlspec == null) {
                 family = font.getFamily();
-            else
+                fontFamilies.add(font.getFamily());
+            }
+            else {
                 family = getFontName(fmlspec, fontWeight, fontStyle);
+                fontFamilies.addAll(getFontNames(fmlspec, fontWeight, fontStyle));
+            }
         }
         else
         {
-            if (factory != null)
+            if (factory != null) {
                 family = factory.getConfig().getDefaultFont(ff.getAWTValue()); //try to translate to physical font
-            if (family == null)
+                fontFamilies.add(family);
+            }
+            if (family == null) {
                 family = ff.getAWTValue(); //could not translate - use as is
+                fontFamilies.add(ff.getAWTValue());
+            }
         }
         
         double size;
@@ -329,8 +349,12 @@ public class VisualContext
             rem = em; //we don't have a root context?
         
         font = createFont(family, (int) Math.round(size), fontWeight, fontStyle, letterSpacing);
+        for (int i = 0; i < fontFamilies.size(); i++) {
+            String font = fontFamilies.get(i);
+            fallbackFonts.add(createFont(font, (int) Math.round(size), fontWeight, fontStyle, letterSpacing));
+        }
         em = size;
-        
+
         CSSProperty.FontVariant variant = style.getProperty("font-variant");
         if (variant != null) fontVariant = variant;
         CSSProperty.TextDecoration decor = style.getProperty("text-decoration");
@@ -622,7 +646,27 @@ public class VisualContext
         //nothing found, use Serif
         return java.awt.Font.SERIF;
     }
-    
+
+    private List<String> getFontNames(TermList list, CSSProperty.FontWeight weight, CSSProperty.FontStyle style) {
+        List<String> fontlist = new ArrayList<>();
+        for (Term<?> term : list)
+        {
+            Object value = term.getValue();
+            if (value instanceof CSSProperty.FontFamily)
+                fontlist.add(((CSSProperty.FontFamily) value).getAWTValue());
+            else
+            {
+                String name = lookupFont(value.toString(), weight, style);
+                if (name != null) fontlist.add( name);
+            }
+        }
+        //nothing found, use Serif
+        if (fontlist.isEmpty()) {
+            return Arrays.asList(Font.SERIF);
+        }
+        return fontlist;
+    }
+
     /**
      * Check if the font family is available either among the CSS defined fonts or the system fonts.
      * If found, registers a system font with the given name. 
